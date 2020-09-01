@@ -8,8 +8,11 @@ orm即Object Relational Mapping，全称对象关系映射。
 # 
 import logging; logging.basicConfig(level=logging.INFO)
 
-import asyncio, os, json, time
+import asyncio, os, json, time,aiomysql
 from datetime import datetime
+
+def log(sql, args=()):
+    logging.info('SQL: %s' % sql)
 
 @asyncio.coroutine
 def create_pool(loop,**kw):
@@ -17,10 +20,10 @@ def create_pool(loop,**kw):
     global __pool
     __pool = yield from aiomysql.create_pool(
         host=kw.get('host','localhost'),
-        port=kw.get('port,3306'),
+        port=kw.get('port',3306),
         user=kw['user'],
         password=kw['password'],
-        db=kw['db'],
+        db = kw['db'],
         charset=kw.get('charset','utf8'),
         autocommit=kw.get('autocommit',True),
         maxsize=kw.get('maxsize',10),
@@ -47,16 +50,21 @@ def select(sql,args,size=None):
 # SQL语句的占位符是?，而MySQL的占位符是%s，select()函数在内部自动替换。注意要始终坚持使用带参数的SQL，而不是自己拼接SQL字符串，这样可以防止SQL注入攻击。
 
 # Insert, Update, Delete
-@asyncio.coroutine
-def execute(sql,args):
+# @asyncio.coroutine
+async def execute(sql,args,autocommit=True):
     log(sql)
-    with(yield from __pool) as conn:
+    async with __pool.get() as conn:
+        if not autocommit:
+            await conn.begin()
         try:
-            cur = yield from conn.cursor()
-            yield from cur.execute(sql.replace('?','%s'),args)
-            affected = cur.rowcount
-            yield from cur.close()
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(sql.replace('?', '%s'), args)
+                affected = cur.rowcount
+            if not autocommit:
+                await conn.commit()
         except BaseException as e:
+            if not autocommit:
+                await conn.rollback()
             raise
         return affected
 
@@ -74,6 +82,12 @@ user.insert()
 # 查询所有User对象:
 users = User.findAll()
 '''
+
+def create_args_string(num):
+    L = []
+    for n in range(num):
+        L.append('?')
+    return ', '.join(L)
 
 
 class Field(object):
@@ -161,45 +175,60 @@ class Model(dict,metaclass=ModelMetaClass):
     def getValueOrDefault(self,key):
         value = getattr(self,key,None)
         if value is None:
-            field = self.__mappings__[keys]
+            field = self.__mappings__[key]
             if field.default is not None:
                 value = field.default() if callable(field.default) else field.default
                 logging.debug('using default value for %s: %s' % (key, str(value)))
                 setattr(self,key,value)
         return value
+
+    @classmethod
+    async def find(cls, pk):
+        ' find object by primary key. '
+        rs = await select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
+        if len(rs) == 0:
+            return None
+        return cls(**rs[0])
+
+    async def save(self):
+        args = list(map(self.getValueOrDefault, self.__fields__))
+        args.append(self.getValueOrDefault(self.__primary_key__))
+        rows = await execute(self.__insert__, args)
+        if rows != 1:
+            logging.warn('failed to insert record: affected rows: %s' % rows)
 # Model从dict继承，所以具备所有dict的功能，同时又实现了特殊方法__getattr__()和__setattr__()，因此又可以像引用普通字段那样写：
 
 
 # 然后，我们往Model类添加class方法，就可以让所有子类调用class方法：
 
-class Model(dict):
+# class Model(dict):
 
-    ...
+#     ...
 
-    @classmethod
-    @asyncio.coroutine
-    def find(cls, pk):
-        ' find object by primary key. '
-        rs = yield from select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
-        if len(rs) == 0:
-            return None
-        return cls(**rs[0])
+#     @classmethod
+#     @asyncio.coroutine
+#     def find(cls, pk):
+#         ' find object by primary key. '
+#         rs = yield from select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
+#         if len(rs) == 0:
+#             return None
+#         return cls(**rs[0])
 
 #  user = yield from User.find('123')
 
 #  往Model类添加实例方法，就可以让所有子类调用实例方法：
-class Model(dict):
+# class Model(dict):
 
-    @asyncio.coroutine
-    def save(self):
-        args = list(map(self.getValueOrDefault,self.__fields__))
-        args.append(self.getValueOrDefault(self.__primary_key__))
-        rows = yield from execute(self.__insert__, args)
-        if rows != 1:
-            logging.warn('failed to insert record: affected rows:%s' % rows)
+#     @classmethod
+#     @asyncio.coroutine
+#     def save(self):
+#         args = list(map(self.getValueOrDefault,self.__fields__))
+#         args.append(self.getValueOrDefault(self.__primary_key__))
+#         rows = yield from execute(self.__insert__, args)
+#         if rows != 1:
+#             logging.warn('failed to insert record: affected rows:%s' % rows)
 
-#  user = User(id=123, name='Michael')
-#  yield from user.save()
+
 #  
 class IntegerField(Field):
 
@@ -222,8 +251,11 @@ class TextField(Field):
         super().__init__(name, 'text', False, default)
 
 # from orm import Model, StringField,IntegerField
-class User(Model):
-    __tables__ = 'users'
+# class User(Model):
+#     __tables__ = 'users'
 
-    id = IntegerField(primary_key=True)
-    name = StringField()
+#     id = IntegerField(primary_key=True)
+#     name = StringField()
+
+ # user = User(id=123, name='Michael')
+ # yield from user.save()
