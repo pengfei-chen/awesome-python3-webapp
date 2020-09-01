@@ -5,6 +5,12 @@ orm即Object Relational Mapping，全称对象关系映射。
 '''
 
 # 创建连接池
+# 
+import logging; logging.basicConfig(level=logging.INFO)
+
+import asyncio, os, json, time
+from datetime import datetime
+
 @asyncio.coroutine
 def create_pool(loop,**kw):
     logging.info('create database connection pool...')
@@ -19,7 +25,7 @@ def create_pool(loop,**kw):
         autocommit=kw.get('autocommit',True),
         maxsize=kw.get('maxsize',10),
         minsize=kw.get('minsize',1),
-        loop
+        loop = loop
         )
 
 #  Select
@@ -57,12 +63,8 @@ def execute(sql,args):
 # execute()函数和select()函数所不同的是，cursor对象不返回结果集，而是通过rowcount返回结果数。
 
 # ORM
-from orm import Model, StringField,IntegerField
-class User(Model):
-    __tables__ = 'users'
+# 
 
-    id = IntegerField(primary_key=True)
-    name = StringField()
 
 '''
 # 创建实例:
@@ -73,34 +75,6 @@ user.insert()
 users = User.findAll()
 '''
 
-# 定义Model
-class Model(dict,metaclass=ModelMetaclass):
-
-    def __init__(self,**kw):
-        super(Model,self).__init__(**kw)
-
-    def __getattr__(self,key):
-        try:
-            return self[key]
-        except KeyError:
-            raise AttributeError (r" 'Model' object has no attribute '%s' " % key )
-
-    def __setattr__(self,key,value):
-        self[key] = value
-
-    def getValue(self,key):
-        return getattr(self,key,None)
-
-    def getValueOrDefault(self,key):
-        value = getattr(self,key,None)
-        if value is None:
-            field = self.__mappings__[keys]
-            if field.default is not None:
-                value = field.default() if callable(field.default) else field.default
-                logging.debug('using default value for %s: %s' % (key, str(value)))
-                setattr(self,key,value)
-        return value
-# Model从dict继承，所以具备所有dict的功能，同时又实现了特殊方法__getattr__()和__setattr__()，因此又可以像引用普通字段那样写：
 
 class Field(object):
 
@@ -165,6 +139,36 @@ class ModelMetaClass(type):
         return type.__new__(cls, name, bases, attrs)
 
 # 这样，任何继承自Model的类（比如User），会自动通过ModelMetaclass扫描映射关系，并存储到自身的类属性如__table__、__mappings__中。
+# 
+# 定义Model
+class Model(dict,metaclass=ModelMetaClass):
+
+    def __init__(self,**kw):
+        super(Model,self).__init__(**kw)
+
+    def __getattr__(self,key):
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError (r" 'Model' object has no attribute '%s' " % key )
+
+    def __setattr__(self,key,value):
+        self[key] = value
+
+    def getValue(self,key):
+        return getattr(self,key,None)
+
+    def getValueOrDefault(self,key):
+        value = getattr(self,key,None)
+        if value is None:
+            field = self.__mappings__[keys]
+            if field.default is not None:
+                value = field.default() if callable(field.default) else field.default
+                logging.debug('using default value for %s: %s' % (key, str(value)))
+                setattr(self,key,value)
+        return value
+# Model从dict继承，所以具备所有dict的功能，同时又实现了特殊方法__getattr__()和__setattr__()，因此又可以像引用普通字段那样写：
+
 
 # 然后，我们往Model类添加class方法，就可以让所有子类调用class方法：
 
@@ -197,4 +201,29 @@ class Model(dict):
 #  user = User(id=123, name='Michael')
 #  yield from user.save()
 #  
-#  
+class IntegerField(Field):
+
+    def __init__(self, name=None, primary_key=False, default=0):
+        super().__init__(name, 'bigint', primary_key, default)
+
+class BooleanField(Field):
+
+    def __init__(self, name=None, default=False):
+        super().__init__(name, 'boolean', False, default)
+
+class FloatField(Field):
+
+    def __init__(self, name=None, primary_key=False, default=0.0):
+        super().__init__(name, 'real', primary_key, default)
+
+class TextField(Field):
+
+    def __init__(self, name=None, default=None):
+        super().__init__(name, 'text', False, default)
+
+# from orm import Model, StringField,IntegerField
+class User(Model):
+    __tables__ = 'users'
+
+    id = IntegerField(primary_key=True)
+    name = StringField()
