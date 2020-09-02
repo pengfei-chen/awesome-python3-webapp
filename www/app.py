@@ -2,11 +2,23 @@ import logging; logging.basicConfig(level=logging.INFO)
 
 import asyncio, os, json, time
 from datetime import datetime
+from models import User
+from coroweb import get
+import orm,coroweb
 
 from aiohttp import web
 
+# def index(request):
+#     return web.Response(body=b'<h1>Awesome</h1>',content_type='text/html')
+
+@get('/')
+@asyncio.coroutine
 def index(request):
-    return web.Response(body=b'<h1>Awesome</h1>')
+    users = yield from User.findAll()
+    return {
+      '__template__':'test.html',
+      'users':users
+    }
 
 @asyncio.coroutine
 def init(loop):
@@ -16,11 +28,14 @@ def init(loop):
     logging.info('server started at http://127.0.0.1:9000...')
     return srv
 
+
 loop = asyncio.get_event_loop()
 loop.run_until_complete(init(loop))
 loop.run_forever()
 
-app = web.Application(loop=loop, middlewares=[logger_factory,response_factory])
-init_jinja2(app,filters=dict(datetime=datetime_filter))
-add_routes(app,'handlers')
-add_static(app)
+
+
+# app = web.Application(loop=loop, middlewares=[logger_factory,response_factory])
+# init_jinja2(app,filters=dict(datetime=datetime_filter))
+# add_routes(app,'handlers')
+# add_static(app)

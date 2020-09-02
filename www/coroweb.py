@@ -1,3 +1,11 @@
+import asyncio, os, inspect, logging, functools
+
+from urllib import parse
+
+from aiohttp import web
+
+# from apis import APIError
+
 # @get和@post
 def get(path):
     '''
@@ -22,7 +30,7 @@ class RequestHandler(object):
 
     @asyncio.coroutine
     def __call__(self,request):
-        kw = ...获取参数
+        # kw = ...获取参数
         r = yield from self._func(**kw)
         return r
 
@@ -82,7 +90,7 @@ def response_factory(app,handler):
             resp = web.Response(body=r.encode('utf-8'))
             resp.content_type = 'text/html:charset=utf-8'
             return resp
-        if isinstance(r,dict):
-            ...
+        # if isinstance(r,dict):
+        #     ...
 
 #  有了这些基础设施，我们就可以专注地往handlers模块不断添加URL处理函数了，可以极大地提高开发效率。
