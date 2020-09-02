@@ -19,3 +19,8 @@ def init(loop):
 loop = asyncio.get_event_loop()
 loop.run_until_complete(init(loop))
 loop.run_forever()
+
+app = web.Application(loop=loop, middlewares=[logger_factory,response_factory])
+init_jinja2(app,filters=dict(datetime=datetime_filter))
+add_routes(app,'handlers')
+add_static(app)
